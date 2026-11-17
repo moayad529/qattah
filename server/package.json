@@ -1,0 +1,16 @@
+{
+  "name": "qatta-rooms-server",
+  "version": "1.0.0",
+  "description": "Anonymous trip rooms for the Qatta app. No accounts, no emails — a room code is the identity.",
+  "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  }
+}

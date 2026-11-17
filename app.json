@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "حاسبة قطة الرحلات",
+    "slug": "trip-kitty-app",
+    "version": "1.4.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": [
+      "qatta",
+      "tripkitty"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tripkitty.app",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.tripkitty.app",
+      "versionCode": 7,
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF4E6",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FAF4E6"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "تسمح لقطّة باختيار صورة الفاتورة من صورك وتحفظها على جوالك فقط. / Qatta lets you pick a receipt photo and keeps it on your phone only.",
+          "cameraPermission": "تسمح لقطّة بالتقاط صورة الفاتورة وتحفظها على جوالك فقط. / Qatta lets you photograph a receipt and keeps it on your phone only.",
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}
