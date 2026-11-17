@@ -4,7 +4,7 @@
 // While it still contains "YOUR-APP", all room / sharing features stay hidden
 // and the app works exactly as before (fully local).
 export const ROOMS_API_URL = (
-  process.env.EXPO_PUBLIC_ROOMS_API_URL || 'https://YOUR-APP.up.railway.app'
+  process.env.EXPO_PUBLIC_ROOMS_API_URL || 'https://qattah-production.up.railway.app'
 ).replace(/\/+$/, '');
 
 export const roomsEnabled = !ROOMS_API_URL.includes('YOUR-APP');
