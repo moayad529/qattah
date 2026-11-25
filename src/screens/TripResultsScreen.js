@@ -225,6 +225,7 @@ export default function TripResultsScreen({ route, navigation }) {
                     </View>
                     <View style={styles.settlementAmountWrap}>
                       <Text style={styles.settlementAmount}>
+                        {s.preferred ? '★ ' : ''}
                         {s.amount.toFixed(2)} {currencyText}
                       </Text>
                     </View>
@@ -235,6 +236,9 @@ export default function TripResultsScreen({ route, navigation }) {
                   </View>
                 ))
               )}
+              {data.settlements.some((s) => s.preferred) ? (
+                <Text style={[styles.preferredNote, { textAlign: isRTL ? 'right' : 'left' }]}>{t('results.preferredNote')}</Text>
+              ) : null}
             </Card>
 
             <Card title={t('results.shareTitle')} icon="📤">
@@ -345,6 +349,7 @@ const createStyles = (colors) => StyleSheet.create({
     marginHorizontal: 8,
   },
   settlementAmount: { fontWeight: '800', color: colors.primary },
+  preferredNote: { marginTop: 6, fontSize: 12.5, color: colors.textMuted, lineHeight: 18 },
   shareGrid: { flexWrap: 'wrap', gap: 8 },
   shareChip: {
     flexGrow: 1,

@@ -43,17 +43,41 @@ export function computeSettlements(participantsIn, expensesIn) {
   const creditors = balances.map((b) => ({ ...b })).filter((b) => b.balance > 0).sort((a, b) => b.balance - a.balance);
 
   const settlements = [];
-  let di = 0;
-  let ci = 0;
-  while (di < debtors.length && ci < creditors.length) {
-    const debtor = debtors[di];
-    const creditor = creditors[ci];
+  const pushSettlement = (debtor, creditor, preferred) => {
     const amount = Math.min(Math.abs(debtor.balance), creditor.balance);
-    if (amount > 0.005) {
-      settlements.push({ from: debtor.name, to: creditor.name, amount: parseFloat(amount.toFixed(2)) });
-    }
+    if (amount <= 0.005) return 0;
+    settlements.push({
+      from: debtor.name,
+      to: creditor.name,
+      amount: parseFloat(amount.toFixed(2)),
+      ...(preferred ? { preferred: true } : {}),
+    });
     debtor.balance += amount;
     creditor.balance -= amount;
+    return amount;
+  };
+
+  // Phase 1 — the trip owner may ask that a member pays a specific person (`payTo`).
+  // That is honoured only while the chosen person is still owed money; whatever
+  // cannot be paid to them falls through to phase 2 and goes to the other creditors.
+  // Debtors are served biggest debt first, so when several people choose the same
+  // payee his balance fills up in that order and the rest overflow to the others.
+  const creditorById = Object.fromEntries(creditors.map((c) => [c.id, c]));
+  debtors.forEach((debtor) => {
+    const wanted = participantById[debtor.id] && participantById[debtor.id].payTo;
+    const creditor = wanted && wanted !== debtor.id ? creditorById[wanted] : null;
+    if (creditor && creditor.balance > 0.005) pushSettlement(debtor, creditor, true);
+  });
+
+  // Phase 2 — the original rule: biggest debtor pays the biggest creditor.
+  const openDebtors = debtors.filter((d) => d.balance < -0.01).sort((a, b) => a.balance - b.balance);
+  const openCreditors = creditors.filter((c) => c.balance > 0.01).sort((a, b) => b.balance - a.balance);
+  let di = 0;
+  let ci = 0;
+  while (di < openDebtors.length && ci < openCreditors.length) {
+    const debtor = openDebtors[di];
+    const creditor = openCreditors[ci];
+    pushSettlement(debtor, creditor, false);
     if (Math.abs(debtor.balance) < 0.01) di++;
     if (creditor.balance < 0.01) ci++;
   }

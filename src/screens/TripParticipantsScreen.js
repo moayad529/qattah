@@ -36,6 +36,7 @@ export default function TripParticipantsScreen({ route, navigation }) {
   const tripName = trip ? trip.name : route.params.tripName;
   const role = trip && trip.room ? trip.room.role : null; // null = local trip
   const canManage = can(role, 'editor');
+  const canSetPay = role === null || role === 'owner'; // local trips are always yours
 
   const load = useCallback(async () => {
     const [tr, ps] = await Promise.all([db.getTrip(tripId), db.getParticipants(tripId)]);
@@ -122,6 +123,37 @@ export default function TripParticipantsScreen({ route, navigation }) {
       },
     ]);
   };
+
+  const nameOf = (id) => {
+    const p = participants.find((x) => x.id === id);
+    return p ? p.name : '';
+  };
+
+  const handleSetPayTo = (id, payTo) =>
+    run(async () => {
+      await db.setPayTo(tripId, { [id]: payTo });
+      await load();
+    });
+
+  // "everyone pays X" — X himself goes back to automatic
+  const handleCollector = (collectorId) =>
+    run(async () => {
+      const assignments = {};
+      participants.forEach((p) => {
+        assignments[p.id] = collectorId && p.id !== collectorId ? collectorId : null;
+      });
+      await db.setPayTo(tripId, assignments);
+      await load();
+    });
+
+  // the member everybody else pays, if there is exactly such a person
+  const collectorId = (() => {
+    if (participants.length < 2) return null;
+    const first = participants.find((p) => p.payTo);
+    if (!first) return null;
+    const target = first.payTo;
+    return participants.every((p) => (p.id === target ? !p.payTo : p.payTo === target)) ? target : null;
+  })();
 
   const handleSetMe = async (id) => {
     await db.setMe(tripId, trip && trip.meId === id ? undefined : id);
@@ -237,6 +269,19 @@ export default function TripParticipantsScreen({ route, navigation }) {
           <Banner type="warning" message={role === 'viewer' ? t('participants.viewOnly') : t('participants.managedByEditors')} />
         )}
 
+        {canSetPay && participants.length >= 2 ? (
+          <Card title={t('participants.payTitle')} icon="💸">
+            <Text style={[styles.hint, textAlign]}>{t('participants.payHint')}</Text>
+            <Text style={[styles.label, textAlign]}>{t('participants.payAll')}</Text>
+            <View style={[styles.chipRow, rowDir]}>
+              <Chip label={t('participants.payAuto')} selected={!participants.some((p) => p.payTo)} onPress={() => handleCollector(null)} />
+              {participants.map((p) => (
+                <Chip key={p.id} label={p.name} selected={collectorId === p.id} onPress={() => handleCollector(p.id)} />
+              ))}
+            </View>
+          </Card>
+        ) : null}
+
         <Card title={t('participants.listTitle')} icon="📋">
           {participants.length === 0 ? (
             <EmptyState icon="👥" text={t('participants.empty')} />
@@ -273,6 +318,21 @@ export default function TripParticipantsScreen({ route, navigation }) {
                     />
                     <Button title={t('common.delete')} small variant="danger" onPress={() => handleDelete(p)} style={styles.actionBtn} />
                   </View>
+                ) : null}
+                {canSetPay && participants.length >= 2 ? (
+                  <View style={styles.payRow}>
+                    <Text style={[styles.payLabel, textAlign]}>{t('participants.payTo')}</Text>
+                    <View style={[styles.chipRow, rowDir]}>
+                      <Chip label={t('participants.payAuto')} selected={!p.payTo} onPress={() => handleSetPayTo(p.id, null)} />
+                      {participants
+                        .filter((o) => o.id !== p.id)
+                        .map((o) => (
+                          <Chip key={o.id} label={o.name} selected={p.payTo === o.id} onPress={() => handleSetPayTo(p.id, o.id)} />
+                        ))}
+                    </View>
+                  </View>
+                ) : p.payTo && nameOf(p.payTo) ? (
+                  <Text style={[styles.payReadOnly, textAlign]}>💸 {t('participants.payToName', nameOf(p.payTo))}</Text>
                 ) : null}
               </View>
             ))
@@ -327,6 +387,9 @@ const createStyles = (colors) =>
       fontSize: 12.5,
       overflow: 'hidden',
     },
+    payRow: { marginTop: 12 },
+    payLabel: { fontSize: 12.5, color: colors.textMuted, fontWeight: '600', marginBottom: 6 },
+    payReadOnly: { marginTop: 8, fontSize: 13, color: colors.textMuted },
     actionsRow: { gap: 8 },
     actionBtn: { flex: 1 },
   });

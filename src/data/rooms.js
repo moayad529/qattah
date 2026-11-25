@@ -53,7 +53,7 @@ export const createRoom = ({ name, currency, participants, expenses }) =>
     body: {
       name,
       currency,
-      participants: participants.map((p) => ({ id: p.id, name: p.name, shareRatio: p.shareRatio })),
+      participants: participants.map((p) => ({ id: p.id, name: p.name, shareRatio: p.shareRatio, payTo: p.payTo || null })),
       expenses: expenses.map(expenseBody),
     },
   });
@@ -83,6 +83,10 @@ export const updateParticipant = (room, p) =>
   });
 export const deleteParticipant = (room, id) =>
   request('DELETE', `/v1/rooms/${room.id}/participants/${id}`, { code: room.code });
+
+// Owner only. assignments: { [memberId]: payeeId | null }
+export const setPayTo = (room, assignments) =>
+  request('PUT', `/v1/rooms/${room.id}/pay-to`, { code: room.code, body: { assignments } });
 
 export const updateRoomInfo = (room, { name, currency }) =>
   request('PUT', `/v1/rooms/${room.id}`, { code: room.code, body: { name, currency } });

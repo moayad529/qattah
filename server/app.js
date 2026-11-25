@@ -94,7 +94,7 @@ const mapExpense = (r) => ({
   splitAmong: r.split_among,
   createdAt: new Date(r.created_at).toISOString(),
 });
-const mapParticipant = (r) => ({ id: r.id, name: r.name, shareRatio: r.share_ratio });
+const mapParticipant = (r) => ({ id: r.id, name: r.name, shareRatio: r.share_ratio, payTo: r.pay_to || null });
 
 function createApp(pool) {
   const app = express();
@@ -201,6 +201,11 @@ function createApp(pool) {
     const ps = participants.map((p) => validateParticipant(p, { requireId: true }));
     const pIds = new Set(ps.map((p) => p.id));
     if (pIds.size !== ps.length) throw new HttpError(400, 'invalid_data');
+    // optional "pays to" preference — silently dropped unless it names another member
+    ps.forEach((p, i) => {
+      const w = participants[i].payTo;
+      p.payTo = isId(w) && w !== p.id && pIds.has(w) ? w : null;
+    });
     const es = expenses.map((e) => validateExpense(e, { requireId: true }));
     if (new Set(es.map((e) => e.id)).size !== es.length) throw new HttpError(400, 'invalid_data');
     if (es.some((e) => !pIds.has(e.participantId))) throw new HttpError(400, 'invalid_data');
@@ -215,7 +220,7 @@ function createApp(pool) {
         [roomId, name, currency, sha(secrets.owner), sha(secrets.editor), sha(secrets.entry), sha(secrets.viewer)]
       );
       for (const p of ps) {
-        await db.query('INSERT INTO room_participants (room_id,id,name,share_ratio) VALUES ($1,$2,$3,$4)', [roomId, p.id, p.name, p.shareRatio]);
+        await db.query('INSERT INTO room_participants (room_id,id,name,share_ratio,pay_to) VALUES ($1,$2,$3,$4,$5)', [roomId, p.id, p.name, p.shareRatio, p.payTo]);
       }
       for (const e of es) {
         await db.query(
@@ -353,6 +358,32 @@ function createApp(pool) {
     const snap = await inTx(async (db) => {
       await db.query('DELETE FROM room_expenses WHERE room_id=$1 AND participant_id=$2', [room.id, req.params.pid]);
       await db.query('DELETE FROM room_participants WHERE room_id=$1 AND id=$2', [room.id, req.params.pid]);
+      await db.query('UPDATE room_participants SET pay_to=NULL WHERE room_id=$1 AND pay_to=$2', [room.id, req.params.pid]);
+      await db.query(bumpSql, [room.id]);
+      return snapshot(db, room.id, role);
+    });
+    res.json(snap);
+  }));
+
+  // Owner decides who each member pays first. Body: { assignments: { <memberId>: <payeeId> | null } }
+  // Everything else about a member stays editable by editors; this stays owner-only.
+  app.put('/v1/rooms/:id/pay-to', wrap(async (req, res) => {
+    const { room, role } = await authenticate(req, req.params.id);
+    need(role, 'owner');
+    const a = (req.body || {}).assignments;
+    if (!a || typeof a !== 'object' || Array.isArray(a)) throw new HttpError(400, 'invalid_data');
+    const entries = Object.entries(a);
+    if (entries.length > LIMITS.participants) throw new HttpError(413, 'too_large');
+    const snap = await inTx(async (db) => {
+      const ps = await db.query('SELECT id FROM room_participants WHERE room_id=$1', [room.id]);
+      const ids = new Set(ps.rows.map((r) => r.id));
+      for (const [id, payTo] of entries) {
+        if (!ids.has(id)) throw new HttpError(404, 'participant_not_found');
+        if (payTo !== null && (!isId(payTo) || payTo === id || !ids.has(payTo))) throw new HttpError(400, 'invalid_data');
+      }
+      for (const [id, payTo] of entries) {
+        await db.query('UPDATE room_participants SET pay_to=$3 WHERE room_id=$1 AND id=$2', [room.id, id, payTo]);
+      }
       await db.query(bumpSql, [room.id]);
       return snapshot(db, room.id, role);
     });

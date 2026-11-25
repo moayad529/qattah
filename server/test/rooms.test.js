@@ -230,3 +230,62 @@ test('invitation page is static, served at /j, and never needs the code on the s
 test('health endpoint', async () => {
   assert.equal((await call('GET', '/health')).json.ok, true);
 });
+
+// ---- "pays to" preference (owner only) ---------------------------------------
+test('only the owner can set who a member pays; others are rejected', async () => {
+  const { roomId, codes } = await makeRoom();
+  const body = { assignments: { p_sara: 'p_ali' } };
+  for (const role of ['viewer', 'entry', 'editor']) {
+    const r = await call('PUT', `/v1/rooms/${roomId}/pay-to`, { code: codes[role], body });
+    assert.equal(r.status, 403, role);
+  }
+  const ok = await call('PUT', `/v1/rooms/${roomId}/pay-to`, { code: codes.owner, body });
+  assert.equal(ok.status, 200);
+  const sara = ok.json.participants.find((p) => p.id === 'p_sara');
+  assert.equal(sara.payTo, 'p_ali');
+  assert.equal(ok.json.participants.find((p) => p.id === 'p_ali').payTo, null);
+  // everyone with a code sees it
+  const v = await call('POST', '/v1/join', { body: { code: codes.viewer } });
+  assert.equal(v.json.participants.find((p) => p.id === 'p_sara').payTo, 'p_ali');
+});
+
+test('pay-to rejects unknown members, self and bad shapes; null clears', async () => {
+  const { roomId, codes } = await makeRoom();
+  const put = (assignments) => call('PUT', `/v1/rooms/${roomId}/pay-to`, { code: codes.owner, body: { assignments } });
+  assert.equal((await put({ p_sara: 'p_sara' })).status, 400);
+  assert.equal((await put({ p_sara: 'p_nobody' })).status, 400);
+  assert.equal((await put({ p_nobody: 'p_ali' })).status, 404);
+  assert.equal((await call('PUT', `/v1/rooms/${roomId}/pay-to`, { code: codes.owner, body: { assignments: [] } })).status, 400);
+  assert.equal((await put({ p_sara: 'p_ali' })).status, 200);
+  const cleared = await put({ p_sara: null });
+  assert.equal(cleared.json.participants.find((p) => p.id === 'p_sara').payTo, null);
+});
+
+test('editors can rename a member without losing the preference; deleting the payee clears it', async () => {
+  const { roomId, codes } = await makeRoom();
+  await call('PUT', `/v1/rooms/${roomId}/pay-to`, { code: codes.owner, body: { assignments: { p_sara: 'p_ali' } } });
+  const ren = await call('PUT', `/v1/rooms/${roomId}/participants/p_sara`, { code: codes.editor, body: { name: 'سارة م', shareRatio: 1 } });
+  assert.equal(ren.status, 200);
+  assert.equal(ren.json.participants.find((p) => p.id === 'p_sara').payTo, 'p_ali');
+  const del = await call('DELETE', `/v1/rooms/${roomId}/participants/p_ali`, { code: codes.editor });
+  assert.equal(del.status, 200);
+  assert.equal(del.json.participants.find((p) => p.id === 'p_sara').payTo, null);
+});
+
+test('create keeps valid preferences and drops invalid ones', async () => {
+  const r = await call('POST', '/v1/rooms', {
+    body: {
+      name: 'x', currency: 'SAR',
+      participants: [
+        { id: 'p_one', name: 'A', shareRatio: 1, payTo: 'p_two' },
+        { id: 'p_two', name: 'B', shareRatio: 1, payTo: 'p_two' },
+        { id: 'p_three', name: 'C', shareRatio: 1, payTo: 'p_ghost' },
+      ],
+      expenses: [],
+    },
+  });
+  assert.equal(r.status, 201);
+  const j = await call('POST', '/v1/join', { body: { code: r.json.codes.owner } });
+  const by = Object.fromEntries(j.json.participants.map((p) => [p.id, p.payTo]));
+  assert.deepEqual(by, { p_one: 'p_two', p_two: null, p_three: null });
+});

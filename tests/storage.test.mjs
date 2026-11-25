@@ -172,6 +172,65 @@ test('shared trip: server-enforced roles through the app storage layer', async (
   assert.equal((await dbC.getParticipants(te.id)).length, 2); // keeps the copy it last synced
 });
 
+test('pays-to preference: local trip, effect on settlements, cleanup on delete', async () => {
+  as('B');
+  const db = await load();
+  const trip = await db.createTrip('تفضيل الدفع', 'SAR');
+  const a = await db.addParticipant(trip.id, 'أحمد', 1);
+  const b = await db.addParticipant(trip.id, 'بدر', 1);
+  const c = await db.addParticipant(trip.id, 'خالد', 1);
+  // أحمد paid 250, بدر paid 150, خالد 0 => split 3 ways of 400: أحمد +116.67, بدر +16.67, خالد -133.33
+  await db.addExpense(trip.id, a.id, 250, 'x', [a.id, b.id, c.id], { category: 'other' });
+  await db.addExpense(trip.id, b.id, 150, 'y', [a.id, b.id, c.id], { category: 'other' });
+  let s = await db.getSettlements(trip.id);
+  assert.deepEqual(s.settlements.map((x) => x.to), ['أحمد', 'بدر']); // automatic: biggest creditor first
+
+  await db.setPayTo(trip.id, { [c.id]: b.id });
+  s = await db.getSettlements(trip.id);
+  const toB = s.settlements.find((x) => x.to === 'بدر');
+  assert.equal(toB.preferred, true);                 // preferred payee is paid first ...
+  assert.ok(Math.abs(s.settlements.reduce((t, x) => t + x.amount, 0) - 133.33) < 0.02); // ... and the debt is still fully settled
+  assert.equal(s.settlements.length, 2);             // overflow went to the other creditor
+
+  await rejectsWith(db.setPayTo(trip.id, { [c.id]: c.id }), 'invalid_data');
+  await rejectsWith(db.setPayTo(trip.id, { [c.id]: 'ghost' }), 'invalid_data');
+  await rejectsWith(db.setPayTo(trip.id, { ghost: a.id }), 'invalid_data');
+
+  await db.deleteParticipant(b.id);                  // payee removed -> preference cleared
+  assert.equal((await db.getParticipants(trip.id)).find((p) => p.id === c.id).payTo, undefined);
+  await db.setPayTo(trip.id, { [c.id]: a.id });
+  await db.setPayTo(trip.id, { [c.id]: null });
+  assert.equal((await db.getParticipants(trip.id)).find((p) => p.id === c.id).payTo, undefined);
+});
+
+test('pays-to preference on a shared trip: only the owner can set it, everyone sees it', async () => {
+  as('A');
+  const dbA = await load();
+  const trip = await dbA.createTrip('مشتركة', 'SAR');
+  const ali = await dbA.addParticipant(trip.id, 'علي', 1);
+  const omar = await dbA.addParticipant(trip.id, 'عمر', 1);
+  const codes = await dbA.shareTrip(trip.id);
+  await dbA.setPayTo(trip.id, { [omar.id]: ali.id });
+  assert.equal((await dbA.getParticipants(trip.id)).find((p) => p.id === omar.id).payTo, ali.id);
+
+  as('D');
+  const dbD = await import('../src/data/storage.js?dev=D2');
+  const te = await dbD.joinTrip(codes.editor);
+  const ps = await dbD.getParticipants(te.id);
+  const omarD = ps.find((p) => p.name === 'عمر');
+  const aliD = ps.find((p) => p.name === 'علي');
+  assert.equal(omarD.payTo, aliD.id);                              // editor sees the owner's choice
+  await rejectsWith(dbD.setPayTo(te.id, { [omarD.id]: null }), 'forbidden');
+  await dbD.updateParticipantShare(omarD.id, 0.5);                 // editing the share keeps it
+  assert.equal((await dbD.getParticipants(te.id)).find((p) => p.name === 'عمر').payTo, aliD.id);
+
+  as('C');
+  const dbC = await import('../src/data/storage.js?dev=C2');
+  const tv = await dbC.joinTrip(codes.viewer);
+  assert.equal((await dbC.getParticipants(tv.id)).find((p) => p.name === 'عمر').payTo, aliD.id);
+  await rejectsWith(dbC.setPayTo(tv.id, { [omarD.id]: null }), 'forbidden');
+});
+
 test('offline: server unreachable gives network_error on writes and "offline" on sync', async () => {
   as('A');
   const dbA = await load();

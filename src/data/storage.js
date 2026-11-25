@@ -13,7 +13,7 @@ import { DEFAULT_CURRENCY } from '../logic/currencies.js';
 // Shape:
 //   trips:         [{ id, name, currency, createdAt, meId?, room? }]
 //                    room = { id, role, code, codes?, rev }   (codes: owner only)
-//   participants:  [{ id, tripId, name, shareRatio }]
+//   participants:  [{ id, tripId, name, shareRatio, payTo? }]   payTo = member this one pays first (owner's choice)
 //   expenses:      [{ id, tripId, participantId, amount, description, category,
 //                     splitAmong, createdAt }]
 //   groups:        [{ id, name, createdAt }]
@@ -109,7 +109,13 @@ async function applySnapshot(tripId, snap) {
   const trip = trips.find((t) => t.id === tripId);
   if (!trip) return;
 
-  const newParticipants = snap.participants.map((p) => ({ id: p.id, tripId, name: p.name, shareRatio: p.shareRatio }));
+  const newParticipants = snap.participants.map((p) => ({
+    id: p.id,
+    tripId,
+    name: p.name,
+    shareRatio: p.shareRatio,
+    payTo: p.payTo || undefined,
+  }));
   const newExpenses = snap.expenses.map((e) => ({
     id: e.id,
     tripId,
@@ -361,6 +367,33 @@ export async function updateParticipantShare(id, shareRatio) {
   await setParticipantsRaw(participants.map((p) => (p.id === id ? { ...p, shareRatio } : p)));
 }
 
+// Who pays whom first. Only the trip owner may set it (a local trip is always yours).
+// assignments: { [participantId]: payeeId | null }  — null/undefined = automatic.
+export async function setPayTo(tripId, assignments) {
+  const trip = await getTripRaw(tripId);
+  if (!trip) throw new Error('no_trip_selected');
+  const participants = await getParticipantsRaw();
+  const ids = new Set(participants.filter((p) => p.tripId === tripId).map((p) => p.id));
+  const clean = {};
+  Object.entries(assignments || {}).forEach(([id, payTo]) => {
+    if (!ids.has(id)) throw new Error('invalid_data');
+    if (payTo && (!ids.has(payTo) || payTo === id)) throw new Error('invalid_data');
+    clean[id] = payTo || null;
+  });
+  if (trip.room) {
+    if (trip.room.role !== 'owner') throw new Error('forbidden');
+    await viaRoom(trip, (room) => rooms.setPayTo(room, clean));
+    return;
+  }
+  await setParticipantsRaw(
+    participants.map((p) =>
+      p.tripId === tripId && Object.prototype.hasOwnProperty.call(clean, p.id)
+        ? { ...p, payTo: clean[p.id] || undefined }
+        : p
+    )
+  );
+}
+
 export async function deleteParticipant(id) {
   const [participants, expenses] = await Promise.all([getParticipantsRaw(), getExpensesRaw()]);
   const current = participants.find((p) => p.id === id);
@@ -372,7 +405,10 @@ export async function deleteParticipant(id) {
   }
   const removed = expenses.filter((e) => e.participantId === id).map((e) => e.id);
   await setExpensesRaw(expenses.filter((e) => e.participantId !== id));
-  await setParticipantsRaw(participants.filter((p) => p.id !== id));
+  // anyone who was told to pay the deleted member goes back to the automatic rule
+  await setParticipantsRaw(
+    participants.filter((p) => p.id !== id).map((p) => (p.payTo === id ? { ...p, payTo: undefined } : p))
+  );
   notifyRemoved(removed);
 }
 

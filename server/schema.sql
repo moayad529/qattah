@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS room_participants (
   PRIMARY KEY (room_id, id)
 );
 
+-- Added in 1.5: the owner can ask that a member pays a specific other member first.
+ALTER TABLE room_participants ADD COLUMN IF NOT EXISTS pay_to TEXT;
+
 CREATE TABLE IF NOT EXISTS room_expenses (
   room_id        TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
   id             TEXT NOT NULL,
