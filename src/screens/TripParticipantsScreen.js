@@ -16,6 +16,7 @@ import { can } from '../data/rooms';
 import useTripSync from '../hooks/useTripSync';
 import { shareLabelText } from '../i18n/translations';
 import { roomsEnabled } from '../config';
+import { payeeIds } from '../logic/settlement';
 
 export default function TripParticipantsScreen({ route, navigation }) {
   const { tripId } = route.params;
@@ -129,31 +130,52 @@ export default function TripParticipantsScreen({ route, navigation }) {
     return p ? p.name : '';
   };
 
-  const handleSetPayTo = (id, payTo) =>
+  // tap a name to add / remove him from this member's priority list (order = order of choosing)
+  const handlePayToggle = (p, otherId) =>
     run(async () => {
-      await db.setPayTo(tripId, { [id]: payTo });
+      const list = payeeIds(p.payTo);
+      const next = list.includes(otherId) ? list.filter((x) => x !== otherId) : [...list, otherId];
+      await db.setPayTo(tripId, { [p.id]: next });
       await load();
     });
 
-  // "everyone pays X" — X himself goes back to automatic
-  const handleCollector = (collectorId) =>
+  const handlePayAuto = (p) =>
+    run(async () => {
+      await db.setPayTo(tripId, { [p.id]: [] });
+      await load();
+    });
+
+  // "everyone pays …": the chosen people are paid first by all the others
+  const applyCollectors = (list) =>
     run(async () => {
       const assignments = {};
       participants.forEach((p) => {
-        assignments[p.id] = collectorId && p.id !== collectorId ? collectorId : null;
+        assignments[p.id] = list.filter((x) => x !== p.id);
       });
       await db.setPayTo(tripId, assignments);
       await load();
     });
 
-  // the member everybody else pays, if there is exactly such a person
-  const collectorId = (() => {
-    if (participants.length < 2) return null;
-    const first = participants.find((p) => p.payTo);
-    if (!first) return null;
-    const target = first.payTo;
-    return participants.every((p) => (p.id === target ? !p.payTo : p.payTo === target)) ? target : null;
+  // the group everyone else pays, when every member's list is exactly "that group without himself"
+  const collectors = (() => {
+    if (participants.length < 2) return [];
+    const group = [];
+    participants.forEach((p) =>
+      payeeIds(p.payTo).forEach((id) => {
+        if (!group.includes(id)) group.push(id);
+      })
+    );
+    if (group.length === 0) return [];
+    const consistent = participants.every((p) => {
+      const want = group.filter((x) => x !== p.id);
+      const have = payeeIds(p.payTo);
+      return have.length === want.length && want.every((x) => have.includes(x));
+    });
+    return consistent ? group : [];
   })();
+
+  const toggleCollector = (id) =>
+    applyCollectors(collectors.includes(id) ? collectors.filter((x) => x !== id) : [...collectors, id]);
 
   const handleSetMe = async (id) => {
     await db.setMe(tripId, trip && trip.meId === id ? undefined : id);
@@ -272,11 +294,13 @@ export default function TripParticipantsScreen({ route, navigation }) {
         {canSetPay && participants.length >= 2 ? (
           <Card title={t('participants.payTitle')} icon="💸">
             <Text style={[styles.hint, textAlign]}>{t('participants.payHint')}</Text>
-            <Text style={[styles.label, textAlign]}>{t('participants.payAll')}</Text>
+            <Text style={[styles.label, textAlign]}>
+              {t('participants.payAll')} <Text style={styles.payNote}>{t('participants.payPriorityNote')}</Text>
+            </Text>
             <View style={[styles.chipRow, rowDir]}>
-              <Chip label={t('participants.payAuto')} selected={!participants.some((p) => p.payTo)} onPress={() => handleCollector(null)} />
+              <Chip label={t('participants.payAuto')} selected={!participants.some((p) => payeeIds(p.payTo).length)} onPress={() => applyCollectors([])} />
               {participants.map((p) => (
-                <Chip key={p.id} label={p.name} selected={collectorId === p.id} onPress={() => handleCollector(p.id)} />
+                <Chip key={p.id} label={p.name} selected={collectors.includes(p.id)} onPress={() => toggleCollector(p.id)} />
               ))}
             </View>
           </Card>
@@ -321,18 +345,30 @@ export default function TripParticipantsScreen({ route, navigation }) {
                 ) : null}
                 {canSetPay && participants.length >= 2 ? (
                   <View style={styles.payRow}>
-                    <Text style={[styles.payLabel, textAlign]}>{t('participants.payTo')}</Text>
+                    <Text style={[styles.payLabel, textAlign]}>
+                      {t('participants.payTo')} <Text style={styles.payNote}>{t('participants.payPriorityNote')}</Text>
+                    </Text>
                     <View style={[styles.chipRow, rowDir]}>
-                      <Chip label={t('participants.payAuto')} selected={!p.payTo} onPress={() => handleSetPayTo(p.id, null)} />
+                      <Chip label={t('participants.payAuto')} selected={payeeIds(p.payTo).length === 0} onPress={() => handlePayAuto(p)} />
                       {participants
                         .filter((o) => o.id !== p.id)
-                        .map((o) => (
-                          <Chip key={o.id} label={o.name} selected={p.payTo === o.id} onPress={() => handleSetPayTo(p.id, o.id)} />
-                        ))}
+                        .map((o) => {
+                          const pos = payeeIds(p.payTo).indexOf(o.id);
+                          return (
+                            <Chip
+                              key={o.id}
+                              label={pos >= 0 && payeeIds(p.payTo).length > 1 ? `${pos + 1}. ${o.name}` : o.name}
+                              selected={pos >= 0}
+                              onPress={() => handlePayToggle(p, o.id)}
+                            />
+                          );
+                        })}
                     </View>
                   </View>
-                ) : p.payTo && nameOf(p.payTo) ? (
-                  <Text style={[styles.payReadOnly, textAlign]}>💸 {t('participants.payToName', nameOf(p.payTo))}</Text>
+                ) : payeeIds(p.payTo).some((x) => nameOf(x)) ? (
+                  <Text style={[styles.payReadOnly, textAlign]}>
+                    💸 {t('participants.payToName', payeeIds(p.payTo).map(nameOf).filter(Boolean).join(isRTL ? '، ' : ', '))}
+                  </Text>
                 ) : null}
               </View>
             ))
@@ -389,6 +425,7 @@ const createStyles = (colors) =>
     },
     payRow: { marginTop: 12 },
     payLabel: { fontSize: 12.5, color: colors.textMuted, fontWeight: '600', marginBottom: 6 },
+    payNote: { fontSize: 11.5, color: colors.textMuted, fontWeight: '500' },
     payReadOnly: { marginTop: 8, fontSize: 13, color: colors.textMuted },
     actionsRow: { gap: 8 },
     actionBtn: { flex: 1 },

@@ -289,3 +289,45 @@ test('create keeps valid preferences and drops invalid ones', async () => {
   const by = Object.fromEntries(j.json.participants.map((p) => [p.id, p.payTo]));
   assert.deepEqual(by, { p_one: 'p_two', p_two: null, p_three: null });
 });
+
+test('several payees: stored as an ordered list, legacy payTo = first, validated, cleaned on delete', async () => {
+  const r = await call('POST', '/v1/rooms', {
+    body: {
+      name: 'x', currency: 'SAR',
+      participants: [
+        { id: 'p_one', name: 'A', shareRatio: 1 },
+        { id: 'p_two', name: 'B', shareRatio: 1 },
+        { id: 'p_three', name: 'C', shareRatio: 1 },
+        { id: 'p_four', name: 'D', shareRatio: 1 },
+      ],
+      expenses: [],
+    },
+  });
+  const { roomId, codes } = r.json;
+  const put = (assignments, code = codes.owner) => call('PUT', `/v1/rooms/${roomId}/pay-to`, { code, body: { assignments } });
+  const ok = await put({ p_one: ['p_three', 'p_two', 'p_three'], p_four: 'p_two' }); // de-duplicated, order kept; single id still accepted
+  assert.equal(ok.status, 200);
+  const by = Object.fromEntries(ok.json.participants.map((p) => [p.id, p]));
+  assert.deepEqual(by.p_one.payToIds, ['p_three', 'p_two']);
+  assert.equal(by.p_one.payTo, 'p_three');
+  assert.deepEqual(by.p_four.payToIds, ['p_two']);
+  assert.deepEqual(by.p_two.payToIds, []);
+  assert.equal((await put({ p_one: ['p_two', 'p_one'] })).status, 400);    // self in list
+  assert.equal((await put({ p_one: ['p_two', 'p_nobody'] })).status, 400); // unknown member
+  assert.equal((await put({ p_one: ['p_two'] }, codes.editor)).status, 403);
+  // deleting one payee removes only him from the lists
+  const del = await call('DELETE', `/v1/rooms/${roomId}/participants/p_three`, { code: codes.editor });
+  const after = Object.fromEntries(del.json.participants.map((p) => [p.id, p]));
+  assert.deepEqual(after.p_one.payToIds, ['p_two']);
+  assert.equal(after.p_one.payTo, 'p_two');
+});
+
+test('schema migration carries the old single pay_to value over to the list', async () => {
+  const r = await call('POST', '/v1/rooms', {
+    body: { name: 'm', currency: 'SAR', participants: [{ id: 'p_old1', name: 'A', shareRatio: 1 }, { id: 'p_old2', name: 'B', shareRatio: 1 }], expenses: [] },
+  });
+  await pool.query("UPDATE room_participants SET pay_to='p_old2', pay_to_ids='[]' WHERE room_id=$1 AND id='p_old1'", [r.json.roomId]);
+  await pool.query(fs.readFileSync(path.join(__dirname, '../schema.sql'), 'utf8')); // what happens on every server start
+  const j = await call('POST', '/v1/join', { body: { code: r.json.codes.viewer } });
+  assert.deepEqual(j.json.participants.find((p) => p.id === 'p_old1').payToIds, ['p_old2']);
+});

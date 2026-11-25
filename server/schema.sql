@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS room_participants (
 
 -- Added in 1.5: the owner can ask that a member pays a specific other member first.
 ALTER TABLE room_participants ADD COLUMN IF NOT EXISTS pay_to TEXT;
+-- 1.6: several preferred payees, in priority order (a JSON array of member ids).
+ALTER TABLE room_participants ADD COLUMN IF NOT EXISTS pay_to_ids JSONB NOT NULL DEFAULT '[]';
+-- one-time carry-over of the single-payee value from 1.5 (idempotent)
+UPDATE room_participants SET pay_to_ids = jsonb_build_array(pay_to), pay_to = NULL WHERE pay_to IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS room_expenses (
   room_id        TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,

@@ -1,6 +1,9 @@
 // Pure settlement logic (no storage). Same rules as the original app:
 // each expense is split among its own `splitAmong` people, weighted by each
 // person's shareRatio; legacy expenses without splitAmong are split among everyone.
+// `payTo` used to be a single id; it is now a list. Accept both.
+export const payeeIds = (payTo) => (Array.isArray(payTo) ? payTo : payTo ? [payTo] : []).filter(Boolean);
+
 export function computeSettlements(participantsIn, expensesIn) {
   const empty = { totalExpense: 0, averagePerShareUnit: 0, totalShareUnits: 0, participants: [], settlements: [] };
   const participants = participantsIn || [];
@@ -57,16 +60,20 @@ export function computeSettlements(participantsIn, expensesIn) {
     return amount;
   };
 
-  // Phase 1 — the trip owner may ask that a member pays a specific person (`payTo`).
-  // That is honoured only while the chosen person is still owed money; whatever
-  // cannot be paid to them falls through to phase 2 and goes to the other creditors.
+  // Phase 1 — the trip owner may ask that a member pays specific people first (`payTo`:
+  // one id, or a list of ids in priority order — the order they were chosen).
+  // Each chosen person is paid only while he is still owed money; whatever cannot be
+  // paid to them falls through to phase 2 and goes to the other creditors.
   // Debtors are served biggest debt first, so when several people choose the same
   // payee his balance fills up in that order and the rest overflow to the others.
   const creditorById = Object.fromEntries(creditors.map((c) => [c.id, c]));
   debtors.forEach((debtor) => {
-    const wanted = participantById[debtor.id] && participantById[debtor.id].payTo;
-    const creditor = wanted && wanted !== debtor.id ? creditorById[wanted] : null;
-    if (creditor && creditor.balance > 0.005) pushSettlement(debtor, creditor, true);
+    const person = participantById[debtor.id];
+    const wanted = person ? payeeIds(person.payTo) : [];
+    wanted.forEach((id) => {
+      const creditor = id !== debtor.id ? creditorById[id] : null;
+      if (creditor && creditor.balance > 0.005 && debtor.balance < -0.005) pushSettlement(debtor, creditor, true);
+    });
   });
 
   // Phase 2 — the original rule: biggest debtor pays the biggest creditor.

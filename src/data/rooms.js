@@ -1,4 +1,5 @@
 import { ROOMS_API_URL } from '../config.js';
+import { payeeIds } from '../logic/settlement.js';
 
 // Thin client for the Qatta rooms server. No accounts: a room *code* is the
 // identity and the server decides what that code may do. Errors are thrown as
@@ -53,7 +54,7 @@ export const createRoom = ({ name, currency, participants, expenses }) =>
     body: {
       name,
       currency,
-      participants: participants.map((p) => ({ id: p.id, name: p.name, shareRatio: p.shareRatio, payTo: p.payTo || null })),
+      participants: participants.map((p) => ({ id: p.id, name: p.name, shareRatio: p.shareRatio, payToIds: payeeIds(p.payTo) })),
       expenses: expenses.map(expenseBody),
     },
   });
@@ -84,7 +85,7 @@ export const updateParticipant = (room, p) =>
 export const deleteParticipant = (room, id) =>
   request('DELETE', `/v1/rooms/${room.id}/participants/${id}`, { code: room.code });
 
-// Owner only. assignments: { [memberId]: payeeId | null }
+// Owner only. assignments: { [memberId]: [payeeId, ...] }  (priority order; [] = automatic)
 export const setPayTo = (room, assignments) =>
   request('PUT', `/v1/rooms/${room.id}/pay-to`, { code: room.code, body: { assignments } });
 

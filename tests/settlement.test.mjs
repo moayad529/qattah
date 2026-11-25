@@ -76,3 +76,26 @@ test('every debt is fully settled whatever the preferences', () => {
   r.settlements.forEach((s) => { net[s.from] += s.amount; net[s.to] -= s.amount; });
   Object.values(net).forEach((v) => assert.ok(Math.abs(v) < 0.05, `left over ${v}`));
 });
+
+// ---- several preferred payees (priority = order chosen) ------------------------
+test('several payees: the first chosen is filled first, then the next, then everyone else', () => {
+  // a +150, b +50, e +100 ; c owes 300
+  const ps = [P('a'), P('b'), P('c', { payTo: ['b', 'e'] }), P('d'), P('e')];
+  const ex = [E('a', 270, ['a', 'b', 'c', 'd', 'e']), E('b', 170, ['a', 'b', 'c', 'd', 'e']), E('e', 220, ['a', 'b', 'c', 'd', 'e'])];
+  const r = computeSettlements(ps, ex);
+  const c = r.settlements.filter((s) => s.from === 'C');
+  assert.equal(c[0].to, 'B'); assert.equal(c[0].preferred, true);
+  assert.equal(c[1].to, 'E'); assert.equal(c[1].preferred, true);
+  const net = Object.fromEntries(r.participants.map((p) => [p.name, p.balance]));
+  r.settlements.forEach((s) => { net[s.from] += s.amount; net[s.to] -= s.amount; });
+  Object.values(net).forEach((v) => assert.ok(Math.abs(v) < 0.05));
+});
+
+test('payTo still accepts a single id (older data) and ignores unknown / self / repeated ids in a list', () => {
+  const ps = [P('a'), P('b'), P('c', { payTo: ['c', 'ghost', 'b', 'b'] }), P('d', { payTo: 'a' })];
+  const ex = [E('a', 250, ['a', 'b', 'c', 'd']), E('b', 150, ['a', 'b', 'c', 'd'])];
+  const r = computeSettlements(ps, ex);
+  assert.equal(r.settlements.filter((s) => s.to === 'B').reduce((t, x) => t + x.amount, 0), 50);
+  assert.ok(r.settlements.filter((s) => s.from === 'D').every((s) => s.to === 'A'));
+  assert.equal(r.settlements.filter((s) => s.from === 'C' && s.to === 'B').length, 1);
+});

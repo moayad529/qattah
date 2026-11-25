@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as rooms from './rooms.js';
-import { computeSettlements } from '../logic/settlement.js';
+import { computeSettlements, payeeIds } from '../logic/settlement.js';
 import { inferCategoryFromDescription, isCategory } from '../logic/categories.js';
 import { DEFAULT_CURRENCY } from '../logic/currencies.js';
 
@@ -13,7 +13,7 @@ import { DEFAULT_CURRENCY } from '../logic/currencies.js';
 // Shape:
 //   trips:         [{ id, name, currency, createdAt, meId?, room? }]
 //                    room = { id, role, code, codes?, rev }   (codes: owner only)
-//   participants:  [{ id, tripId, name, shareRatio, payTo? }]   payTo = member this one pays first (owner's choice)
+//   participants:  [{ id, tripId, name, shareRatio, payTo? }]   payTo = ids this member pays first, in priority order (owner's choice; a single id in older data)
 //   expenses:      [{ id, tripId, participantId, amount, description, category,
 //                     splitAmong, createdAt }]
 //   groups:        [{ id, name, createdAt }]
@@ -114,7 +114,10 @@ async function applySnapshot(tripId, snap) {
     tripId,
     name: p.name,
     shareRatio: p.shareRatio,
-    payTo: p.payTo || undefined,
+    payTo: (() => {
+      const ids = Array.isArray(p.payToIds) && p.payToIds.length ? p.payToIds : payeeIds(p.payTo);
+      return ids.length ? ids : undefined;
+    })(),
   }));
   const newExpenses = snap.expenses.map((e) => ({
     id: e.id,
@@ -368,7 +371,8 @@ export async function updateParticipantShare(id, shareRatio) {
 }
 
 // Who pays whom first. Only the trip owner may set it (a local trip is always yours).
-// assignments: { [participantId]: payeeId | null }  — null/undefined = automatic.
+// assignments: { [participantId]: [payeeId, ...] }  — a list in priority order;
+// [] / null = automatic. A single id is accepted too.
 export async function setPayTo(tripId, assignments) {
   const trip = await getTripRaw(tripId);
   if (!trip) throw new Error('no_trip_selected');
@@ -377,8 +381,12 @@ export async function setPayTo(tripId, assignments) {
   const clean = {};
   Object.entries(assignments || {}).forEach(([id, payTo]) => {
     if (!ids.has(id)) throw new Error('invalid_data');
-    if (payTo && (!ids.has(payTo) || payTo === id)) throw new Error('invalid_data');
-    clean[id] = payTo || null;
+    const list = [];
+    payeeIds(payTo).forEach((o) => {
+      if (!ids.has(o) || o === id) throw new Error('invalid_data');
+      if (!list.includes(o)) list.push(o);
+    });
+    clean[id] = list;
   });
   if (trip.room) {
     if (trip.room.role !== 'owner') throw new Error('forbidden');
@@ -388,7 +396,7 @@ export async function setPayTo(tripId, assignments) {
   await setParticipantsRaw(
     participants.map((p) =>
       p.tripId === tripId && Object.prototype.hasOwnProperty.call(clean, p.id)
-        ? { ...p, payTo: clean[p.id] || undefined }
+        ? { ...p, payTo: clean[p.id].length ? clean[p.id] : undefined }
         : p
     )
   );
@@ -407,7 +415,12 @@ export async function deleteParticipant(id) {
   await setExpensesRaw(expenses.filter((e) => e.participantId !== id));
   // anyone who was told to pay the deleted member goes back to the automatic rule
   await setParticipantsRaw(
-    participants.filter((p) => p.id !== id).map((p) => (p.payTo === id ? { ...p, payTo: undefined } : p))
+    participants
+      .filter((p) => p.id !== id)
+      .map((p) => {
+        const left = payeeIds(p.payTo).filter((o) => o !== id);
+        return payeeIds(p.payTo).length === left.length ? p : { ...p, payTo: left.length ? left : undefined };
+      })
   );
   notifyRemoved(removed);
 }
