@@ -89,6 +89,21 @@ export function computeSettlements(participantsIn, expensesIn) {
     if (creditor.balance < 0.01) ci++;
   }
 
+  // Present the result grouped by DEBTOR: all of one person's payments sit together.
+  // Debtors: biggest total first (ties by name). Inside a group: the people the owner
+  // chose come first (in his priority order), then the rest, biggest amount first.
+  const totalOwedBy = {};
+  settlements.forEach((x) => {
+    totalOwedBy[x.from] = (totalOwedBy[x.from] || 0) + x.amount;
+  });
+  const seq = new Map(settlements.map((x, i) => [x, i]));
+  settlements.sort((a, b) => {
+    if (a.from !== b.from) return totalOwedBy[b.from] - totalOwedBy[a.from] || a.from.localeCompare(b.from);
+    if (!!a.preferred !== !!b.preferred) return a.preferred ? -1 : 1;
+    if (a.preferred) return seq.get(a) - seq.get(b);
+    return b.amount - a.amount || seq.get(a) - seq.get(b);
+  });
+
   const r2 = (n) => parseFloat(n.toFixed(2));
   return {
     totalExpense: r2(totalExpense),

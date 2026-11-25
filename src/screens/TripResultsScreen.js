@@ -47,6 +47,21 @@ function buildSummaryText(data, tripName, t, c) {
   return text;
 }
 
+// settlements arrive sorted by debtor; fold them into one block per debtor
+function groupByDebtor(list) {
+  const groups = [];
+  list.forEach((s) => {
+    let g = groups.find((x) => x.from === s.from);
+    if (!g) {
+      g = { from: s.from, total: 0, items: [] };
+      groups.push(g);
+    }
+    g.items.push(s);
+    g.total += s.amount;
+  });
+  return groups;
+}
+
 export default function TripResultsScreen({ route, navigation }) {
   const { tripId } = route.params;
   const { colors } = useTheme();
@@ -217,22 +232,30 @@ export default function TripResultsScreen({ route, navigation }) {
               {data.settlements.length === 0 ? (
                 <EmptyState icon="🎉" text={t('results.settled')} />
               ) : (
-                data.settlements.map((s, idx) => (
-                  <View key={idx} style={[styles.settlementItem, rowDir, accentSide]}>
-                    <View style={styles.settlementSide}>
-                      <Text style={[styles.settlementName, { color: colors.danger }]}>{s.from}</Text>
-                      <Text style={styles.settlementLabel}>{t('results.pays')}</Text>
+                groupByDebtor(data.settlements).map((g) => (
+                  <View key={g.from} style={[styles.debtorGroup, accentSide]}>
+                    <View style={[styles.debtorHead, rowDir]}>
+                      <View>
+                        <Text style={[styles.settlementName, { color: colors.danger, fontSize: 16 }]}>{g.from}</Text>
+                        <Text style={styles.settlementLabel}>{t('results.pays')}</Text>
+                      </View>
+                      <View style={styles.settlementAmountWrap}>
+                        <Text style={styles.settlementAmount}>
+                          {g.total.toFixed(2)} {currencyText}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.settlementAmountWrap}>
-                      <Text style={styles.settlementAmount}>
-                        {s.preferred ? '★ ' : ''}
-                        {s.amount.toFixed(2)} {currencyText}
-                      </Text>
-                    </View>
-                    <View style={styles.settlementSide}>
-                      <Text style={[styles.settlementName, { color: colors.success }]}>{s.to}</Text>
-                      <Text style={styles.settlementLabel}>{t('results.receives')}</Text>
-                    </View>
+                    {g.items.map((s, idx) => (
+                      <View key={idx} style={[styles.payLine, rowDir]}>
+                        <Text style={[styles.payLineTo, { textAlign: isRTL ? 'right' : 'left' }]}>
+                          {t('participants.payTo')} <Text style={{ color: colors.success, fontWeight: '800' }}>{s.to}</Text>
+                        </Text>
+                        <Text style={styles.payLineAmount}>
+                          {s.preferred ? '★ ' : ''}
+                          {s.amount.toFixed(2)} {currencyText}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
                 ))
               )}
@@ -338,6 +361,24 @@ const createStyles = (colors) => StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  debtorGroup: {
+    backgroundColor: colors.purpleTint,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+  },
+  debtorHead: { alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  payLine: {
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.cardBg,
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  payLineTo: { flex: 1, color: colors.text, fontSize: 14 },
+  payLineAmount: { fontWeight: '800', color: colors.primary },
   settlementSide: { flex: 1, alignItems: 'center' },
   settlementName: { fontWeight: '800', fontSize: 14.5 },
   settlementLabel: { fontSize: 11.5, color: colors.textMuted, marginTop: 2 },

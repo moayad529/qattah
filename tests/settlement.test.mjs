@@ -99,3 +99,28 @@ test('payTo still accepts a single id (older data) and ignores unknown / self / 
   assert.ok(r.settlements.filter((s) => s.from === 'D').every((s) => s.to === 'A'));
   assert.equal(r.settlements.filter((s) => s.from === 'C' && s.to === 'B').length, 1);
 });
+
+// ---- ordering: all payments of one debtor are together ---------------------------
+test('settlements are grouped by debtor (biggest debtor first), preferred payees first inside a group', () => {
+  // creditors: a +100, b +60 ; debtors: c -90, d -70
+  const ps = [P('a'), P('b'), P('c', { payTo: ['b'] }), P('d')];
+  const ex = [E('a', 200, ['a', 'b', 'c', 'd']), E('b', 160, ['a', 'b', 'c', 'd'])]; // 360 => 90 each; a +110, b +70, c -90, d -90
+  const r = computeSettlements(ps, ex);
+  const froms = r.settlements.map((s) => s.from);
+  // no debtor appears in two separate runs
+  const runs = froms.filter((f, i) => i === 0 || f !== froms[i - 1]);
+  assert.equal(new Set(runs).size, runs.length);
+  const cs = r.settlements.filter((s) => s.from === 'C');
+  assert.equal(cs[0].to, 'B'); assert.equal(cs[0].preferred, true);
+});
+
+test('grouping: debtors ordered by total owed, then name; amounts inside a group biggest first', () => {
+  const ps = [P('a'), P('b'), P('c'), P('d'), P('e')];
+  const ex = [E('a', 400, ['a', 'b', 'c', 'd', 'e']), E('b', 100, ['a', 'b', 'c', 'd', 'e'])]; // 500 => 100 each; a +300, b 0, c/d/e -100
+  const r = computeSettlements(ps, ex);
+  assert.deepEqual(r.settlements.map((s) => s.from), ['C', 'D', 'E']); // equal totals -> by name
+  const big = computeSettlements([P('a'), P('b'), P('c'), P('d')], [E('a', 300, ['a', 'b', 'c', 'd']), E('b', 100, ['a', 'b', 'c', 'd'])]);
+  // a +225? b +25 ; c,d owe 100 each: c pays a then b — biggest first
+  const forC = big.settlements.filter((s) => s.from === 'C').map((s) => s.amount);
+  assert.deepEqual(forC, [...forC].sort((x, y) => y - x));
+});

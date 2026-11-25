@@ -38,11 +38,24 @@ export function buildPdfHtml({ tripName, currencyText, isRTL, createdAt, data, e
     )
     .join('');
 
-  const settlementRows = data.settlements.length
-    ? data.settlements
-        .map((s) => `<div class="settle"><b class="neg">${esc(s.from)}</b> → <b class="pos">${esc(s.to)}</b><span class="amt">${fmt(s.amount)} ${c}</span></div>`)
+  // one block per debtor (settlements are already sorted by debtor)
+  const debtorGroups = [];
+  data.settlements.forEach((s) => {
+    let g = debtorGroups.find((x) => x.from === s.from);
+    if (!g) debtorGroups.push((g = { from: s.from, total: 0, items: [] }));
+    g.items.push(s);
+    g.total += s.amount;
+  });
+  const settlementRows = debtorGroups.length
+    ? debtorGroups
+        .map(
+          (g) => `<div class="debtor"><div class="settle head"><b class="neg">${esc(g.from)}</b><span class="amt">${fmt(g.total)} ${c}</span></div>${g.items
+            .map((s) => `<div class="settle line"><span>${esc(t('participants.payTo'))} <b class="pos">${esc(s.to)}</b></span><span class="amt">${s.preferred ? '★ ' : ''}${fmt(s.amount)} ${c}</span></div>`)
+            .join('')}</div>`
+        )
         .join('')
     : `<div class="muted">${esc(t('results.settled'))}</div>`;
+  const preferredNote = data.settlements.some((s) => s.preferred) ? `<div class="muted" style="margin-top:6px">${esc(t('results.preferredNote'))}</div>` : '';
 
   const catRows = byCategory
     .map((k) => {
@@ -84,6 +97,9 @@ export function buildPdfHtml({ tripName, currencyText, isRTL, createdAt, data, e
   td.num, th.num { text-align: ${isRTL ? 'left' : 'right'}; white-space: nowrap; direction: ltr; unicode-bidi: plaintext; }
   .pos { color: #2f9e44; } .neg { color: #e03131; } .muted { color: #a39a8c; }
   .settle { background: #fdf0e4; border-radius: 8px; padding: 9px 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .debtor { margin-bottom: 10px; page-break-inside: avoid; }
+  .settle.head { background: #fbe3d0; font-size: 15px; }
+  .settle.line { background: #fff7f0; margin-right: 14px; margin-left: 14px; }
   .settle .amt { font-weight: 800; color: #e8590c; direction: ltr; }
   .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .bar-label { width: 28%; font-size: 11.5px; }
@@ -106,6 +122,7 @@ export function buildPdfHtml({ tripName, currencyText, isRTL, createdAt, data, e
 
   <h2>${esc(t('pdf.settlements'))}</h2>
   ${settlementRows}
+  ${preferredNote}
 
   <h2>${esc(t('pdf.participants'))}</h2>
   <table><thead><tr>
