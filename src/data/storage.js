@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as rooms from './rooms.js';
 import { computeSettlements, payeeIds } from '../logic/settlement.js';
+import { parseNumber } from '../logic/numbers.js';
 import { inferCategoryFromDescription, isCategory } from '../logic/categories.js';
 import { DEFAULT_CURRENCY } from '../logic/currencies.js';
 
@@ -443,7 +444,7 @@ export async function getExpenses(tripId) {
 }
 
 function validateExpenseInput(tripId, participantId, amount, splitAmong) {
-  if (!participantId || amount === undefined || amount === null || Number.isNaN(Number(amount)) || amount < 0) {
+  if (!participantId || amount === undefined || amount === null || Number.isNaN(parseNumber(amount)) || parseNumber(amount) < 0) {
     throw new Error('invalid_data');
   }
   if (!tripId) throw new Error('no_trip_selected');
@@ -460,7 +461,7 @@ export async function addExpense(tripId, participantId, amount, description, spl
     id: genId(),
     tripId,
     participantId,
-    amount: parseFloat(amount),
+    amount: parseNumber(amount),
     description: (description || '').trim(),
     category: isCategory(opts.category) ? opts.category : 'other',
     splitAmong,
@@ -484,7 +485,7 @@ export async function updateExpense(id, participantId, amount, description, spli
   const updated = {
     ...current,
     participantId,
-    amount: parseFloat(amount),
+    amount: parseNumber(amount),
     description: (description || '').trim(),
     category: isCategory(opts.category) ? opts.category : current.category || 'other',
     splitAmong,

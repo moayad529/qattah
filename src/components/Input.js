@@ -2,8 +2,11 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import { useTheme } from '../context/SettingsContext';
 import { useLanguage } from '../context/LanguageContext';
+import { toWesternNumberText } from '../logic/numbers';
 
-export default function Input({ label, style, containerStyle, ...props }) {
+const NUMERIC_KEYBOARDS = ['numeric', 'decimal-pad', 'number-pad'];
+
+export default function Input({ label, style, containerStyle, onChangeText, ...props }) {
   const { colors } = useTheme();
   const { isRTL } = useLanguage();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -14,6 +17,12 @@ export default function Input({ label, style, containerStyle, ...props }) {
         style={[styles.input, { textAlign: isRTL ? 'right' : 'left' }, style]}
         placeholderTextColor={colors.placeholder}
         writingDirection={isRTL ? 'rtl' : 'ltr'}
+        // numeric fields accept Arabic digits too and turn them into English digits as you type
+        onChangeText={
+          onChangeText && NUMERIC_KEYBOARDS.includes(props.keyboardType)
+            ? (txt) => onChangeText(toWesternNumberText(txt))
+            : onChangeText
+        }
         {...props}
       />
     </View>

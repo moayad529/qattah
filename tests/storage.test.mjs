@@ -268,6 +268,20 @@ test('pays-to with several people: order kept, local and shared, payee removal t
   assert.deepEqual((await dbC.getParticipants(tv.id)).find((p) => p.name === 'واحد').payTo, [p3.id, p2.id]);
 });
 
+test('amounts typed with Arabic digits are stored as English numbers', async () => {
+  as('B');
+  const db = await load();
+  const trip = await db.createTrip('أرقام عربية', 'SAR');
+  const a = await db.addParticipant(trip.id, 'أ', 1);
+  const b = await db.addParticipant(trip.id, 'ب', 1);
+  const e = await db.addExpense(trip.id, a.id, '١٢٣٫٥٠', 'x', [a.id, b.id], { category: 'other' });
+  assert.equal(e.amount, 123.5);
+  await db.updateExpense(e.id, a.id, '٢٠٠', 'x', [a.id, b.id], { category: 'other' });
+  const list = await db.getExpenses(trip.id);
+  assert.equal(list[0].amount, 200);
+  await rejectsWith(db.addExpense(trip.id, a.id, 'abc', 'x', [a.id], {}), 'invalid_data');
+});
+
 test('offline: server unreachable gives network_error on writes and "offline" on sync', async () => {
   as('A');
   const dbA = await load();

@@ -17,6 +17,7 @@ import useTripSync from '../hooks/useTripSync';
 import { shareLabelText } from '../i18n/translations';
 import { roomsEnabled } from '../config';
 import { payeeIds } from '../logic/settlement';
+import { parseNumber } from '../logic/numbers';
 
 export default function TripParticipantsScreen({ route, navigation }) {
   const { tripId } = route.params;
@@ -66,7 +67,7 @@ export default function TripParticipantsScreen({ route, navigation }) {
 
   const resolveRatio = () => {
     if (!useCustom) return ratio;
-    const n = parseFloat(customPercent);
+    const n = parseNumber(customPercent);
     if (isNaN(n) || n < 0 || n > 100) return null;
     return n / 100;
   };
@@ -306,7 +307,7 @@ export default function TripParticipantsScreen({ route, navigation }) {
           </Card>
         ) : null}
 
-        <Card title={t('participants.listTitle')} icon="📋">
+        <Card title={`${t('participants.listTitle')} (${participants.length})`} icon="📋">
           {participants.length === 0 ? (
             <EmptyState icon="👥" text={t('participants.empty')} />
           ) : (

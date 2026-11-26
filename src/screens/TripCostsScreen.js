@@ -28,6 +28,7 @@ import { can } from '../data/rooms';
 import useTripSync from '../hooks/useTripSync';
 import { CATEGORIES, categoryMeta } from '../logic/categories';
 import { parseBankMessages } from '../logic/bankSms';
+import { parseNumber } from '../logic/numbers';
 import { localDateKey, ltr } from '../logic/stats';
 
 export default function TripCostsScreen({ route, navigation }) {
@@ -184,7 +185,7 @@ export default function TripCostsScreen({ route, navigation }) {
       setMessage({ type: 'error', text: t('costs.whoPaidValidation') });
       return;
     }
-    const parsed = parseFloat(String(amount).replace(',', '.'));
+    const parsed = parseNumber(amount);
     if (!parsed || parsed <= 0) {
       setMessage({ type: 'error', text: t('costs.amountValidation') });
       return;

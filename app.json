@@ -13,14 +13,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.tripkitty.app",
-      "buildNumber": "1",
+      "buildNumber": "5",
       "config": {
         "usesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.tripkitty.app",
-      "versionCode": 7,
+      "versionCode": 8,
       "adaptiveIcon": {
         "backgroundColor": "#FAF4E6",
         "foregroundImage": "./assets/android-icon-foreground.png",
